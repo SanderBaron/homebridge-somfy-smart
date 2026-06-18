@@ -1,0 +1,56 @@
+{
+  "displayName": "Homebridge Somfy Smart",
+  "name": "homebridge-somfy-smart",
+  "version": "0.1.0",
+  "description": "Slimme Homebridge-plugin voor Somfy zonwering via de lokale TaHoma Developer Mode API. De plugin is het brein: leest de zonlichtsensoren live uit en bepaalt zelf wanneer screens omhoog of omlaag gaan.",
+  "license": "MIT",
+  "author": "Sander Baron",
+  "homepage": "https://github.com/SanderBaron/homebridge-somfy-smart#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SanderBaron/homebridge-somfy-smart.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SanderBaron/homebridge-somfy-smart/issues"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "somfy",
+    "tahoma",
+    "overkiz",
+    "io-homecontrol",
+    "screens",
+    "zonwering",
+    "awning"
+  ],
+  "engines": {
+    "node": "^18.20.0 || ^20.18.0 || ^22.10.0 || ^24.0.0",
+    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "homebridge-ui",
+    "config.schema.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rimraf ./dist && tsc",
+    "lint": "eslint src --ext .ts",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run lint && npm run build"
+  },
+  "dependencies": {
+    "@homebridge/plugin-ui-utils": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^8.57.1",
+    "homebridge": "^2.0.0-beta.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2"
+  }
+}

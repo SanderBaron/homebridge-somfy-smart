@@ -1,0 +1,70 @@
+{
+  "pluginAlias": "SomfySmart",
+  "pluginType": "platform",
+  "singular": true,
+  "customUi": true,
+  "headerDisplay": "Slimme Somfy zonwering via de lokale TaHoma Developer Mode API. De volledige beheerflow (devices, regels, status) loopt straks via de custom UI; dit schema dekt de basisverbinding.",
+  "footerDisplay": "Vergeet niet het Smart-zonscenario in de TaHoma-app uit te zetten — deze plugin is het brein.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Naam",
+        "type": "string",
+        "default": "Somfy Smart",
+        "required": true
+      },
+      "pin": {
+        "title": "Gateway-PIN",
+        "type": "string",
+        "placeholder": "xxxx-xxxx-xxxx",
+        "description": "De PIN van je TaHoma-box. Wordt gebruikt voor gateway-{PIN}.local.",
+        "pattern": "^[0-9]{4}-[0-9]{4}-[0-9]{4}$"
+      },
+      "host": {
+        "title": "Vast IP / hostnaam (optioneel)",
+        "type": "string",
+        "placeholder": "192.168.1.50",
+        "description": "Overschrijft de mDNS-naam. Handig bij een vast IP of als .local niet resolved."
+      },
+      "token": {
+        "title": "Developer Mode token",
+        "type": "string",
+        "required": true,
+        "description": "Bearer-token uit developer.somfy.com (Developer Mode)."
+      },
+      "tlsMode": {
+        "title": "TLS-modus",
+        "type": "string",
+        "default": "insecure",
+        "oneOf": [
+          { "title": "LAN-vertrouwen (zelfondertekend cert accepteren)", "enum": ["insecure"] },
+          { "title": "Pinned (verifieer tegen Overkiz root-CA)", "enum": ["pinned"] }
+        ]
+      },
+      "caCert": {
+        "title": "Overkiz root-CA (PEM)",
+        "type": "string",
+        "typeahead": { "source": [] },
+        "condition": { "functionBody": "return model.tlsMode === 'pinned';" }
+      },
+      "exposeSensors": {
+        "title": "Zonlichtsensoren als HomeKit-lichtsensor tonen",
+        "type": "boolean",
+        "default": true
+      },
+      "exposeContact": {
+        "title": "Deurcontact als HomeKit ContactSensor tonen",
+        "type": "boolean",
+        "default": true
+      },
+      "pollIntervalMs": {
+        "title": "Event poll-interval (ms)",
+        "type": "integer",
+        "default": 1000,
+        "minimum": 250,
+        "maximum": 10000
+      }
+    }
+  }
+}

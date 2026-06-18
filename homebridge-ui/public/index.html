@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    :root { --bd: #d9dce1; --mut: #6c757d; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    h3 { margin: 0 0 .25rem; }
+    .card { border: 1px solid var(--bd); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .card > .hd { font-weight: 600; font-size: 1.05rem; margin-bottom: .75rem; display:flex; justify-content:space-between; align-items:center; }
+    label { font-size: .82rem; color: var(--mut); display: block; margin: .4rem 0 .15rem; }
+    input[type=text], input[type=password], input[type=number], select {
+      width: 100%; box-sizing: border-box; padding: .45rem .55rem; border: 1px solid var(--bd);
+      border-radius: 7px; font-size: .9rem; background: transparent; color: inherit;
+    }
+    .row { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 120px; }
+    button { cursor: pointer; border: none; border-radius: 7px; padding: .5rem .9rem; font-size: .88rem; font-weight: 600; }
+    .btn { background: #007aff; color: #fff; }
+    .btn-sec { background: #e9ecef; color: #222; }
+    .btn-dng { background: #ffe5e5; color: #c00; }
+    .btn-sm { padding: .3rem .6rem; font-size: .8rem; }
+    .muted { color: var(--mut); font-size: .82rem; }
+    .pill { display:inline-block; padding:.12rem .5rem; border-radius:20px; font-size:.74rem; font-weight:600; }
+    .pill.ok { background:#e3f9e5; color:#1b7d2a; }
+    .pill.warn { background:#fff3cd; color:#8a6d00; }
+    .pill.off { background:#eee; color:#666; }
+    .dev { display:flex; justify-content:space-between; padding:.4rem 0; border-bottom:1px solid #f0f0f0; font-size:.88rem; }
+    .dev:last-child { border-bottom:none; }
+    .checks { display:flex; flex-wrap:wrap; gap:.35rem .9rem; }
+    .checks label { display:flex; align-items:center; gap:.35rem; margin:0; color:inherit; font-size:.85rem; }
+    .checks input { width:auto; }
+    .rule { border:1px solid var(--bd); border-radius:8px; padding:.75rem; margin-bottom:.6rem; }
+    .rule .top { display:flex; justify-content:space-between; align-items:center; gap:.5rem; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:.5rem .75rem; }
+    .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem .75rem; }
+    .hint { font-size:.78rem; color:var(--mut); margin-top:.2rem; }
+    hr { border:none; border-top:1px solid #f0f0f0; margin:.6rem 0; }
+    .right { text-align:right; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Verbinding -->
+  <div class="card">
+    <div class="hd">1 · Verbinding met de TaHoma-box</div>
+    <div class="row">
+      <div>
+        <label>Gateway-PIN</label>
+        <input type="text" id="pin" placeholder="xxxx-xxxx-xxxx" />
+      </div>
+      <div>
+        <label>Vast IP / host (optioneel)</label>
+        <input type="text" id="host" placeholder="192.168.1.50" />
+      </div>
+    </div>
+    <label>Developer Mode token</label>
+    <input type="password" id="token" placeholder="Bearer-token" />
+    <div class="row" style="margin-top:.5rem; align-items:flex-end;">
+      <div>
+        <label>TLS-modus</label>
+        <select id="tlsMode">
+          <option value="insecure">LAN-vertrouwen (zelfondertekend cert)</option>
+          <option value="pinned">Pinned (Overkiz root-CA)</option>
+        </select>
+      </div>
+      <div class="right">
+        <button class="btn" id="btnTest">Test verbinding</button>
+      </div>
+    </div>
+    <div id="testResult" class="hint"></div>
+    <hr />
+    <div class="checks">
+      <label><input type="checkbox" id="exposeSensors" /> Zonsensoren als lichtsensor tonen</label>
+      <label><input type="checkbox" id="exposeContact" /> Deurcontact tonen</label>
+    </div>
+  </div>
+
+  <!-- Devices -->
+  <div class="card">
+    <div class="hd">2 · Gedetecteerde devices
+      <button class="btn-sec btn btn-sm" id="btnDevices">Vernieuw</button>
+    </div>
+    <div id="devList" class="muted">Nog niet geladen — test eerst de verbinding.</div>
+  </div>
+
+  <!-- Groepen -->
+  <div class="card">
+    <div class="hd">3 · Groepen
+      <button class="btn-sec btn btn-sm" id="btnAddGroup">+ Groep</button>
+    </div>
+    <div id="groupList"></div>
+    <div class="hint">Een groep bundelt screens (bv. Oost, Zuid) zodat een regel ze samen bedient.</div>
+  </div>
+
+  <!-- Regels -->
+  <div class="card">
+    <div class="hd">4 · Slimme regels
+      <button class="btn-sec btn btn-sm" id="btnAddRule">+ Regel</button>
+    </div>
+    <div id="ruleList"></div>
+  </div>
+
+  <!-- Interlock -->
+  <div class="card">
+    <div class="hd">5 · Deurcontact-interlock
+      <button class="btn-sec btn btn-sm" id="btnAddInterlock">+ Interlock</button>
+    </div>
+    <div id="interlockList"></div>
+    <div class="hint">Het gekoppelde screen mag alleen omlaag als het contact gesloten is.</div>
+  </div>
+
+  <!-- Glazenwasser -->
+  <div class="card">
+    <div class="hd">6 · Glazenwasser-knop</div>
+    <div class="checks"><label><input type="checkbox" id="gwEnabled" /> Schakelaar tonen</label></div>
+    <div class="row" style="margin-top:.4rem;">
+      <div><label>Naam</label><input type="text" id="gwName" placeholder="Glazenwasser" /></div>
+      <div><label>Auto-hervat na (uren, 0 = nooit)</label><input type="number" id="gwAuto" min="0" step="1" /></div>
+    </div>
+  </div>
+
+  <!-- Pauzeer zonwering -->
+  <div class="card">
+    <div class="hd">7 · Pauzeer-zonwering-knop</div>
+    <div class="checks"><label><input type="checkbox" id="spEnabled" /> Schakelaar tonen</label></div>
+    <div class="row" style="margin-top:.4rem;">
+      <div><label>Naam</label><input type="text" id="spName" placeholder="Pauzeer zonwering" /></div>
+    </div>
+    <div class="hint">Bij inschakelen legt de plugin op elk scherm dat handmatig verder open staat dan de regels willen een minimum-openstand vast (bv. droogrek achter het raam). Het scherm mag dan nog wél mee omhoog bij bewolking, maar gaat niet verder dicht dan die stand. Uitschakelen heft de grendels op.</div>
+  </div>
+
+  <!-- Status -->
+  <div class="card">
+    <div class="hd">Status
+      <button class="btn-sec btn btn-sm" id="btnStatus">Vernieuw</button>
+    </div>
+    <div id="statusBox" class="muted">—</div>
+  </div>
+
+  <div class="right" style="margin-bottom:2rem;">
+    <button class="btn" id="btnSave">Opslaan</button>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  let cfg, devices = [], labelByUrl = {};
+
+  const conn = () => ({
+    pin: $('pin').value.trim(), host: $('host').value.trim(),
+    token: $('token').value.trim(), tlsMode: $('tlsMode').value,
+  });
+  const screens = () => devices.filter(d => d.type === 'screen');
+  const sensors = () => devices.filter(d => d.type === 'sensor');
+  const contacts = () => devices.filter(d => d.type === 'contact');
+  const labelOf = (url) => labelByUrl[url] || url;
+
+  // ---- init ----
+  const all = await homebridge.getPluginConfig();
+  cfg = all[0] || { platform: 'SomfySmart', name: 'Somfy Smart' };
+  if (!all.length) await homebridge.updatePluginConfig([cfg]);
+  const a = cfg.automation = cfg.automation || {};
+  a.groups = a.groups || []; a.rules = a.rules || [];
+  a.interlocks = a.interlocks || [];
+  a.glazenwasser = a.glazenwasser || { enabled: true, name: 'Glazenwasser' };
+  a.sunPause = a.sunPause || { enabled: true, name: 'Pauzeer zonwering' };
+
+  // Toon meteen de laatst gedetecteerde devices uit cache (geen wachten / opnieuw detecteren).
+  try {
+    const cached = JSON.parse(localStorage.getItem('somfy-smart-devices') || '[]');
+    if (Array.isArray(cached) && cached.length) {
+      devices = cached;
+      devices.forEach(d => labelByUrl[d.deviceURL] = d.label);
+    }
+  } catch (e) { /* lege cache */ }
+
+  $('pin').value = cfg.pin || ''; $('host').value = cfg.host || '';
+  $('token').value = cfg.token || ''; $('tlsMode').value = cfg.tlsMode || 'insecure';
+  $('exposeSensors').checked = cfg.exposeSensors !== false;
+  $('exposeContact').checked = cfg.exposeContact !== false;
+  $('gwEnabled').checked = a.glazenwasser.enabled !== false;
+  $('gwName').value = a.glazenwasser.name || 'Glazenwasser';
+  $('gwAuto').value = a.glazenwasser.autoResumeHours || 0;
+  $('spEnabled').checked = a.sunPause.enabled !== false;
+  $('spName').value = a.sunPause.name || 'Pauzeer zonwering';
+
+  renderDevices(); renderGroups(); renderRules(); renderInterlocks();
+  if (cfg.token && (cfg.pin || cfg.host)) loadDevices(true);
+
+  // ---- connection ----
+  $('btnTest').onclick = async () => {
+    $('testResult').textContent = 'Verbinden…';
+    try {
+      const r = await homebridge.request('/test-connection', conn());
+      $('testResult').innerHTML = `<span class="pill ok">verbonden</span> gateway ${r.gatewayId} · protocol ${r.protocol} · ${r.status}`;
+    } catch (e) { $('testResult').innerHTML = `<span class="pill warn">fout</span> ${e.message}`; }
+  };
+  $('btnDevices').onclick = () => loadDevices(false);
+
+  async function loadDevices(silent) {
+    if (!silent) $('devList').textContent = 'Laden…';
+    try {
+      const r = await homebridge.request('/devices', conn());
+      devices = r.devices; labelByUrl = {};
+      devices.forEach(d => labelByUrl[d.deviceURL] = d.label);
+      try { localStorage.setItem('somfy-smart-devices', JSON.stringify(devices)); } catch (e) {}
+      renderDevices(); renderGroups(); renderRules(); renderInterlocks();
+    } catch (e) {
+      if (!silent) $('devList').innerHTML = `<span class="pill warn">fout</span> ${e.message}`;
+    }
+  }
+
+  function renderDevices() {
+    if (!devices.length) { $('devList').textContent = 'Geen devices gevonden.'; return; }
+    const fmt = (d) => {
+      if (d.type === 'sensor') return `☀️ <b>${d.label}</b><span>${Math.round(d.lux)} lux</span>`;
+      if (d.type === 'contact') return `🚪 <b>${d.label}</b><span>${d.contact === 'closed' ? 'gesloten' : 'open'}</span>`;
+      return `🪟 <b>${d.label}</b><span>${d.position}% open</span>`;
+    };
+    $('devList').innerHTML = devices.map(d => `<div class="dev">${fmt(d)}</div>`).join('');
+  }
+
+  // ---- groups ----
+  $('btnAddGroup').onclick = () => { a.groups.push({ id: 'grp' + Date.now(), name: 'Nieuwe groep', screens: [] }); renderGroups(); };
+  function renderGroups() {
+    $('groupList').innerHTML = a.groups.map((g, i) => `
+      <div class="rule">
+        <div class="top">
+          <input type="text" value="${esc(g.name)}" oninput="GR.name(${i},this.value)" style="max-width:60%" />
+          <button class="btn btn-dng btn-sm" onclick="GR.del(${i})">verwijder</button>
+        </div>
+        <div class="hint">Screens in deze groep:</div>
+        <div class="checks">${screens().map(s => `
+          <label><input type="checkbox" ${g.screens.includes(s.deviceURL) ? 'checked' : ''}
+            onchange="GR.toggle(${i},'${s.deviceURL}',this.checked)"/> ${esc(s.label)}</label>`).join('') || '<span class="muted">laad eerst devices</span>'}</div>
+      </div>`).join('') || '<div class="muted">Nog geen groepen.</div>';
+  }
+  window.GR = {
+    name: (i, v) => a.groups[i].name = v,
+    del: (i) => { a.groups.splice(i, 1); renderGroups(); },
+    toggle: (i, url, on) => {
+      const s = a.groups[i].screens;
+      if (on) { if (!s.includes(url)) s.push(url); } else a.groups[i].screens = s.filter(x => x !== url);
+    },
+  };
+
+  // ---- rules ----
+  $('btnAddRule').onclick = () => {
+    a.rules.push({ id: 'rule' + Date.now(), name: 'Nieuwe regel', enabled: true, targetType: 'screen', targetId: '',
+      sun: { sensors: [], combine: 'avg', thresholdHigh: 40000, thresholdLow: 25000,
+        durationDownSec: 120, durationUpSec: 900, adaptiveUp: true, closedPosition: 0, openPosition: 100 },
+      minIntervalSec: 60 });
+    renderRules();
+  };
+  function targetOptions(r) {
+    const list = screens();
+    const scr = list.map(s => `<option value="screen:${s.deviceURL}" ${r.targetType==='screen'&&r.targetId===s.deviceURL?'selected':''}>🪟 ${esc(s.label)}</option>`).join('');
+    const grp = a.groups.map(g => `<option value="group:${g.id}" ${r.targetType==='group'&&r.targetId===g.id?'selected':''}>📦 ${esc(g.name)}</option>`).join('');
+    // Bewaar een opgeslagen screen-doel ook als de device-lijst 'm (nog) niet kent.
+    let fallback = '';
+    if (r.targetType === 'screen' && r.targetId && !list.some(s => s.deviceURL === r.targetId)) {
+      fallback = `<option value="screen:${r.targetId}" selected>🪟 ${esc(labelOf(r.targetId))}</option>`;
+    }
+    return `<option value="">— kies doel —</option>${scr}${grp}${fallback}`;
+  }
+  function renderRules() {
+    $('ruleList').innerHTML = a.rules.map((r, i) => {
+      const s = r.sun || (r.sun = {});
+      const t = r.time;
+      return `<div class="rule">
+        <div class="top">
+          <input type="text" value="${esc(r.name)}" oninput="RU.set(${i},'name',this.value)" style="max-width:50%"/>
+          <div>
+            <label style="display:inline; margin:0;"><input type="checkbox" ${r.enabled?'checked':''} onchange="RU.set(${i},'enabled',this.checked)"/> aan</label>
+            <button class="btn btn-dng btn-sm" onclick="RU.del(${i})">verwijder</button>
+          </div>
+        </div>
+        <label>Doel</label>
+        <select onchange="RU.target(${i},this.value)">${targetOptions(r)}</select>
+        <div class="hint">Zonlicht-sensoren (leeg = alle):</div>
+        <div class="checks">${sensors().map(se => `<label><input type="checkbox" ${(s.sensors||[]).includes(se.deviceURL)?'checked':''} onchange="RU.sensor(${i},'${se.deviceURL}',this.checked)"/> ${esc(se.label)}</label>`).join('') || '<span class="muted">laad devices</span>'}</div>
+        <div class="grid3" style="margin-top:.4rem;">
+          <div><label>Combinatie</label><select onchange="RU.sun(${i},'combine',this.value)">
+            ${['avg','max','min','first'].map(c=>`<option ${s.combine===c?'selected':''}>${c}</option>`).join('')}</select></div>
+          <div><label>Omlaag boven (lux)</label><input type="number" value="${s.thresholdHigh??''}" oninput="RU.sunNum(${i},'thresholdHigh',this.value)"/></div>
+          <div><label>Omhoog onder (lux)</label><input type="number" value="${s.thresholdLow??''}" oninput="RU.sunNum(${i},'thresholdLow',this.value)"/></div>
+          <div><label>Duur omlaag (sec)</label><input type="number" value="${s.durationDownSec ?? s.durationSec ?? 120}" oninput="RU.sunNum(${i},'durationDownSec',this.value)"/></div>
+          <div><label>Duur omhoog (sec)</label><input type="number" value="${s.durationUpSec ?? 900}" oninput="RU.sunNum(${i},'durationUpSec',this.value)"/></div>
+          <div><label>Positie omlaag (%)</label><input type="number" min="0" max="100" value="${s.closedPosition??0}" oninput="RU.sunNum(${i},'closedPosition',this.value)"/></div>
+          <div><label>Positie omhoog (%)</label><input type="number" min="0" max="100" value="${s.openPosition??100}" oninput="RU.sunNum(${i},'openPosition',this.value)"/></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.3rem;"><input type="checkbox" ${s.adaptiveUp!==false?'checked':''} onchange="RU.sun(${i},'adaptiveUp',this.checked)"/> Somfy-stijl: omhoog-vertraging laten meegroeien met de zonduur (tot 2×)</label>
+        <div class="hint">Somfy gebruikt ~2 min omlaag en 15–30 min omhoog (langer naarmate de zon langer scheen). Zo pendelt het niet bij een kort wolkje.</div>
+        <hr/>
+        <label style="display:flex;align-items:center;gap:.4rem;"><input type="checkbox" ${t?'checked':''} onchange="RU.timeToggle(${i},this.checked)"/> Tijdvenster gebruiken</label>
+        ${t ? `<div class="grid3">
+          <div><label>Van</label><input type="text" value="${esc(t.start||'09:00')}" oninput="RU.time(${i},'start',this.value)" placeholder="09:00"/></div>
+          <div><label>Tot</label><input type="text" value="${esc(t.end||'20:00')}" oninput="RU.time(${i},'end',this.value)" placeholder="20:00"/></div>
+          <div><label>Modus</label><select onchange="RU.time(${i},'mode',this.value)">
+            <option value="active" ${t.mode!=='inactive'?'selected':''}>alleen binnen venster</option>
+            <option value="inactive" ${t.mode==='inactive'?'selected':''}>juist buiten venster</option></select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.3rem;"><input type="checkbox" ${t.reopenAtEnd?'checked':''} onchange="RU.timeBool(${i},'reopenAtEnd',this.checked)"/> Scherm openen aan het einde van het venster</label>
+        <div class="hint">Voor ramen die later op de dag geen zoninval meer hebben. (Alleen bij modus "binnen venster".)</div>` : ''}
+        <div class="grid2" style="margin-top:.4rem;">
+          <div><label>Min. interval (sec)</label><input type="number" value="${r.minIntervalSec??60}" oninput="RU.num(${i},'minIntervalSec',this.value)"/></div>
+        </div>
+      </div>`;
+    }).join('') || '<div class="muted">Nog geen regels.</div>';
+  }
+  window.RU = {
+    set: (i,k,v)=>{ a.rules[i][k]=v; },
+    num: (i,k,v)=>{ a.rules[i][k]=Number(v); },
+    del: (i)=>{ a.rules.splice(i,1); renderRules(); },
+    target: (i,v)=>{ const idx=v.indexOf(':'); const tp=idx<0?'':v.slice(0,idx); const id=idx<0?'':v.slice(idx+1); a.rules[i].targetType=tp||'screen'; a.rules[i].targetId=id||''; },
+    sun: (i,k,v)=>{ a.rules[i].sun[k]=v; },
+    sunNum: (i,k,v)=>{ a.rules[i].sun[k]=Number(v); },
+    sensor: (i,url,on)=>{ const s=a.rules[i].sun; s.sensors=s.sensors||[]; if(on){if(!s.sensors.includes(url))s.sensors.push(url);}else s.sensors=s.sensors.filter(x=>x!==url); },
+    timeToggle: (i,on)=>{ a.rules[i].time = on ? { start:'09:00', end:'20:00', mode:'active' } : undefined; renderRules(); },
+    time: (i,k,v)=>{ a.rules[i].time[k]=v; },
+    timeBool: (i,k,v)=>{ a.rules[i].time[k]=!!v; },
+  };
+
+  // ---- interlocks ----
+  $('btnAddInterlock').onclick = () => { a.interlocks.push({ screen:'', contact:'', onDoorOpen:'queue' }); renderInterlocks(); };
+  function renderInterlocks() {
+    $('interlockList').innerHTML = a.interlocks.map((il,i)=>`
+      <div class="rule"><div class="grid3">
+        <div><label>Screen</label><select onchange="IL.set(${i},'screen',this.value)">
+          <option value="">—</option>${screens().map(s=>`<option value="${s.deviceURL}" ${il.screen===s.deviceURL?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+        <div><label>Contact</label><select onchange="IL.set(${i},'contact',this.value)">
+          <option value="">—</option>${contacts().map(c=>`<option value="${c.deviceURL}" ${il.contact===c.deviceURL?'selected':''}>${esc(c.label)}</option>`).join('')}</select></div>
+        <div><label>Bij open deur</label><select onchange="IL.set(${i},'onDoorOpen',this.value)">
+          <option value="queue" ${il.onDoorOpen!=='drop'?'selected':''}>uitstellen tot dicht</option>
+          <option value="drop" ${il.onDoorOpen==='drop'?'selected':''}>laten vervallen</option></select></div>
+      </div><div class="right"><button class="btn btn-dng btn-sm" onclick="IL.del(${i})">verwijder</button></div></div>`).join('') || '<div class="muted">Geen interlocks.</div>';
+  }
+  window.IL = { set:(i,k,v)=>{a.interlocks[i][k]=v;}, del:(i)=>{a.interlocks.splice(i,1);renderInterlocks();} };
+
+  // ---- status ----
+  $('btnStatus').onclick = loadStatus;
+  async function loadStatus() {
+    try {
+      const s = await homebridge.request('/status', {});
+      const pill = s.paused ? '<span class="pill warn">gepauzeerd</span>' : '<span class="pill ok">actief</span>';
+      const sp = s.sunPause ? ' · <span class="pill warn">zonwering gepauzeerd</span>' : '';
+      const caps = Object.entries(s.caps||{}).map(([url,p])=>`<div class="dev"><b>🔒 ${esc(labelOf(url))}</b><span>min ${p}% open</span></div>`).join('');
+      const acts = Object.entries(s.lastActions||{}).map(([url,act])=>`<div class="dev"><b>${esc(labelOf(url))}</b><span>${act.position}% · ${esc(act.reason)} · ${new Date(act.at).toLocaleString('nl-NL')}</span></div>`).join('');
+      $('statusBox').innerHTML = `Engine: ${pill}${sp}${s.glazenwasserUntil?` · glazenwasser tot ${new Date(s.glazenwasserUntil).toLocaleString('nl-NL')}`:''}<hr/>${caps}${acts||'<span class="muted">nog geen acties</span>'}`;
+    } catch(e){ $('statusBox').innerHTML = `<span class="pill warn">fout</span> ${e.message}`; }
+  }
+  loadStatus();
+
+  // ---- save ----
+  $('btnSave').onclick = async () => {
+    cfg.pin = $('pin').value.trim() || undefined;
+    cfg.host = $('host').value.trim() || undefined;
+    cfg.token = $('token').value.trim() || undefined;
+    cfg.tlsMode = $('tlsMode').value;
+    cfg.exposeSensors = $('exposeSensors').checked;
+    cfg.exposeContact = $('exposeContact').checked;
+    a.glazenwasser.enabled = $('gwEnabled').checked;
+    a.glazenwasser.name = $('gwName').value.trim() || 'Glazenwasser';
+    a.glazenwasser.autoResumeHours = Number($('gwAuto').value) || 0;
+    a.sunPause.enabled = $('spEnabled').checked;
+    a.sunPause.name = $('spName').value.trim() || 'Pauzeer zonwering';
+    try {
+      await homebridge.updatePluginConfig([cfg]);
+      await homebridge.savePluginConfig();
+      homebridge.toast.success('Opgeslagen. Herstart Homebridge om wijzigingen te activeren.', 'Somfy Smart');
+    } catch (e) { homebridge.toast.error(e.message, 'Opslaan mislukt'); }
+  };
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+})();
+</script>
+</body>
+</html>
