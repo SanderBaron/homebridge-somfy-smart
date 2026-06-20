@@ -140,6 +140,25 @@
     <div id="statusBox" class="muted">—</div>
   </div>
 
+  <!-- Geschiedenis -->
+  <div class="card">
+    <div class="hd">Geschiedenis
+      <span style="display:flex; gap:.4rem;">
+        <select id="histFilter">
+          <option value="all">alles</option>
+          <option value="eval">beslissingen</option>
+          <option value="cmd">commando's</option>
+          <option value="contact">deurcontact</option>
+          <option value="interlock">interlock</option>
+          <option value="lux">lux-verloop</option>
+        </select>
+        <button class="btn-sec btn btn-sm" id="btnHistory">Vernieuw</button>
+      </span>
+    </div>
+    <div id="histBox" class="muted">—</div>
+    <div class="hint">Overleeft een herstart en log-truncatie. Lux wordt vastgelegd bij ≥250 lux verschil of elke ~2 min; timers en commando's altijd.</div>
+  </div>
+
   <div class="right" style="margin-bottom:2rem;">
     <button class="btn" id="btnSave">Opslaan</button>
   </div>
@@ -337,9 +356,12 @@
         <div><label>Bij open deur</label><select onchange="IL.set(${i},'onDoorOpen',this.value)">
           <option value="queue" ${il.onDoorOpen!=='drop'?'selected':''}>uitstellen tot dicht</option>
           <option value="drop" ${il.onDoorOpen==='drop'?'selected':''}>laten vervallen</option></select></div>
-      </div><div class="right"><button class="btn btn-dng btn-sm" onclick="IL.del(${i})">verwijder</button></div></div>`).join('') || '<div class="muted">Geen interlocks.</div>';
+        <div><label>Debounce dicht (sec)</label><input type="number" min="0" value="${il.closeDebounceSec ?? 10}" oninput="IL.num(${i},'closeDebounceSec',this.value)"/></div>
+      </div>
+      <div class="hint">Debounce filtert korte valse "dicht"-blips van de sensor weg: het contact moet zo lang onafgebroken dicht zijn vóór een uitgestelde omlaag wordt uitgevoerd.</div>
+      <div class="right"><button class="btn btn-dng btn-sm" onclick="IL.del(${i})">verwijder</button></div></div>`).join('') || '<div class="muted">Geen interlocks.</div>';
   }
-  window.IL = { set:(i,k,v)=>{a.interlocks[i][k]=v;}, del:(i)=>{a.interlocks.splice(i,1);renderInterlocks();} };
+  window.IL = { set:(i,k,v)=>{a.interlocks[i][k]=v;}, num:(i,k,v)=>{a.interlocks[i][k]=Number(v);}, del:(i)=>{a.interlocks.splice(i,1);renderInterlocks();} };
 
   // ---- status ----
   $('btnStatus').onclick = loadStatus;
@@ -354,6 +376,34 @@
     } catch(e){ $('statusBox').innerHTML = `<span class="pill warn">fout</span> ${e.message}`; }
   }
   loadStatus();
+
+  // ---- history ----
+  let histEntries = [];
+  $('btnHistory').onclick = loadHistory;
+  $('histFilter').onchange = renderHistory;
+  async function loadHistory() {
+    try {
+      const r = await homebridge.request('/history', { limit: 400 });
+      histEntries = r.entries || [];
+      renderHistory();
+    } catch (e) { $('histBox').innerHTML = `<span class="pill warn">fout</span> ${e.message}`; }
+  }
+  function renderHistory() {
+    const f = $('histFilter').value;
+    const rows = histEntries.filter(e => f === 'all' || e.kind === f).slice().reverse().map(e => {
+      const tm = new Date(e.t).toLocaleTimeString('nl-NL');
+      let txt = '';
+      if (e.kind === 'lux') txt = `☀️ ${esc(labelOf(e.sensor))}: <b>${e.lux}</b> lux`;
+      else if (e.kind === 'eval') txt = `🧠 ${esc(e.rule)} — ${esc(e.event)}${e.lux != null ? ` <span class="muted">(${e.lux} lux)</span>` : ''}`;
+      else if (e.kind === 'cmd') txt = `🪟 <b>${esc(e.reason)}</b> → ${(e.screens || []).map(u => esc(labelOf(u))).join(', ')} = ${(e.positions || []).join('/')}%`;
+      else if (e.kind === 'contact') txt = `🚪 ${esc(labelOf(e.sensor))}: <b>${e.state === 'closed' ? 'dicht' : 'open'}</b>`;
+      else if (e.kind === 'interlock') txt = `🔐 ${esc(e.event)}${e.screen ? ` <span class="muted">[${esc(labelOf(e.screen))}]</span>` : ''}`;
+      else txt = esc(JSON.stringify(e));
+      return `<div class="dev"><span class="muted" style="white-space:nowrap">${tm}</span><span style="text-align:right">${txt}</span></div>`;
+    }).join('');
+    $('histBox').innerHTML = rows || '<span class="muted">nog geen geschiedenis</span>';
+  }
+  loadHistory();
 
   // ---- save ----
   $('btnSave').onclick = async () => {

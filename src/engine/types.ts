@@ -93,6 +93,12 @@ export interface InterlockConfig {
   contact: string;
   /** Wat te doen met een omlaag-commando terwijl de deur open is. Default 'queue'. */
   onDoorOpen?: 'queue' | 'drop';
+  /**
+   * Hoe lang het contact onafgebroken 'dicht' moet melden vóór een uitgestelde
+   * omlaag wordt uitgevoerd. Filtert spurious "dicht"-blips van de sensor weg.
+   * Default 10.
+   */
+  closeDebounceSec?: number;
 }
 
 /** Stateful "Glazenwasser"-schakelaar. */

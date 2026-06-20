@@ -4,11 +4,14 @@ import type { OverkizClient } from '../overkiz/client';
 import { Command, OverkizAction } from '../overkiz/types';
 import type { DeviceRegistry } from '../state/registry';
 import type { StateStore } from '../state/store';
+import type { HistoryLog } from '../state/history';
 import { MoveSource } from './types';
 
 interface InterlockEntry {
   contact: string;
   mode: 'queue' | 'drop';
+  /** Sustained 'dicht'-tijd vóór een uitgestelde omlaag wordt uitgevoerd (ms). */
+  debounceMs: number;
 }
 
 export interface DispatcherOptions {
@@ -22,6 +25,8 @@ export interface DispatcherOptions {
   groups: Map<string, string[]>;
   /** screen-deviceURL → interlock. */
   interlocks: Map<string, InterlockEntry>;
+  /** Optionele geschiedenis-logger. */
+  history?: HistoryLog;
 }
 
 /**
@@ -35,6 +40,8 @@ export interface DispatcherOptions {
 export class MoveDispatcher {
   /** Onderdrukte omlaag-commando's die wachten tot de deur weer dicht is. */
   private readonly pendingDown = new Map<string, { position: number; reason: string }>();
+  /** Lopende debounce-timers per contact-deviceURL (anti-blip op "deur dicht"). */
+  private readonly flushTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly opts: DispatcherOptions) {}
 
@@ -55,24 +62,84 @@ export class MoveDispatcher {
     await this.move(this.opts.screenUrls, position, source, reason);
   }
 
-  /** Reageer op een contact-wijziging: bij 'dicht' de gewachte omlaag-commando's alsnog uitvoeren. */
+  /**
+   * Reageer op een contact-wijziging. Bij 'dicht' wordt een uitgestelde omlaag
+   * NIET meteen uitgevoerd, maar pas nadat het contact `debounceMs` onafgebroken
+   * dicht is gebleven — zo filteren we spurious "dicht"-blips van de sensor weg
+   * die anders het scherm op een open deur zouden laten zakken.
+   */
   onContact(contactUrl: string, closed: boolean): void {
-    if (!closed || this.pendingDown.size === 0) {
+    if (closed) {
+      if (!this.hasQueuedFor(contactUrl)) {
+        return;
+      }
+      const debounceMs = this.debounceFor(contactUrl);
+      this.clearFlushTimer(contactUrl);
+      this.opts.history?.add({
+        kind: 'interlock',
+        contact: contactUrl,
+        event: `deur dicht ontvangen — flush over ${Math.round(debounceMs / 1000)}s`,
+      });
+      this.flushTimers.set(contactUrl, setTimeout(() => this.flushClosed(contactUrl), debounceMs));
+    } else if (this.flushTimers.has(contactUrl)) {
+      // Deur (weer) open vóór de debounce verstreek: blip — flush annuleren.
+      this.clearFlushTimer(contactUrl);
+      this.opts.log.info('Deur weer open binnen debounce — uitgestelde omlaag geannuleerd (blip).');
+      this.opts.history?.add({
+        kind: 'interlock',
+        contact: contactUrl,
+        event: 'deur weer open — flush geannuleerd (blip)',
+      });
+    }
+  }
+
+  /** Voer de gewachte omlaag uit — mits het contact nog steeds dicht is. */
+  private flushClosed(contactUrl: string): void {
+    this.flushTimers.delete(contactUrl);
+    if (!this.opts.registry.isClosed(contactUrl)) {
+      this.opts.history?.add({
+        kind: 'interlock',
+        contact: contactUrl,
+        event: 'flush afgebroken — deur niet meer dicht',
+      });
       return;
     }
-    const toFlush: { url: string; position: number; reason: string }[] = [];
+    const toFlush: { url: string; position: number }[] = [];
     for (const [url, pend] of this.pendingDown) {
       if (this.opts.interlocks.get(url)?.contact === contactUrl) {
-        toFlush.push({ url, ...pend });
+        toFlush.push({ url, position: pend.position });
         this.pendingDown.delete(url);
       }
     }
     if (toFlush.length) {
-      this.opts.log.info(`Deur dicht — ${toFlush.length} uitgesteld omlaag-commando alsnog uitvoeren.`);
-      void this.executeBatch(
-        toFlush.map((m) => ({ url: m.url, position: m.position })),
-        'interlock: deur weer dicht',
-      );
+      this.opts.log.info(`Deur bevestigd dicht — ${toFlush.length} uitgesteld omlaag-commando uitvoeren.`);
+      void this.executeBatch(toFlush, 'interlock: deur weer dicht');
+    }
+  }
+
+  private hasQueuedFor(contactUrl: string): boolean {
+    for (const url of this.pendingDown.keys()) {
+      if (this.opts.interlocks.get(url)?.contact === contactUrl) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private debounceFor(contactUrl: string): number {
+    for (const il of this.opts.interlocks.values()) {
+      if (il.contact === contactUrl) {
+        return il.debounceMs;
+      }
+    }
+    return 10_000;
+  }
+
+  private clearFlushTimer(contactUrl: string): void {
+    const t = this.flushTimers.get(contactUrl);
+    if (t) {
+      clearTimeout(t);
+      this.flushTimers.delete(contactUrl);
     }
   }
 
@@ -116,8 +183,10 @@ export class MoveDispatcher {
         if (il.mode === 'queue') {
           this.pendingDown.set(url, { position: effective, reason });
           this.opts.log.info(`Interlock: '${reason}' op ${url} uitgesteld — deur staat open.`);
+          this.opts.history?.add({ kind: 'interlock', screen: url, event: `omlaag uitgesteld (${reason}) — deur open` });
         } else {
           this.opts.log.info(`Interlock: '${reason}' op ${url} vervallen — deur staat open.`);
+          this.opts.history?.add({ kind: 'interlock', screen: url, event: `omlaag vervallen (${reason}) — deur open` });
         }
         continue;
       }
@@ -159,6 +228,12 @@ export class MoveDispatcher {
       for (const m of moves) {
         this.opts.store.recordAction(m.url, { position: m.position, reason, at });
       }
+      this.opts.history?.add({
+        kind: 'cmd',
+        reason,
+        screens: moves.map((m) => m.url),
+        positions: moves.map((m) => m.position),
+      });
       this.opts.log.info(`'${reason}': ${moves.length} screen(s) → ${moves.map((m) => `${m.position}%`).join(', ')}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -21,6 +21,7 @@ import { GlazenwasserAccessory } from './accessories/glazenwasser';
 import { SunPauseAccessory } from './accessories/sunpause';
 import { DeviceRegistry } from './state/registry';
 import { StateStore } from './state/store';
+import { HistoryLog } from './state/history';
 import { MoveDispatcher } from './engine/dispatcher';
 import { RuleEngine } from './engine/rule-engine';
 
@@ -42,9 +43,11 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
   private readonly config: SomfySmartConfig;
   private client?: OverkizClient;
   private store?: StateStore;
+  private history?: HistoryLog;
   private dispatcher?: MoveDispatcher;
   private engine?: RuleEngine;
   private screenUrls: string[] = [];
+  private readonly lastLuxLogged = new Map<string, { lux: number; t: number }>();
 
   constructor(
     public readonly log: Logging,
@@ -59,6 +62,7 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
     this.api.on('shutdown', () => {
       this.engine?.stop();
       this.client?.stop();
+      this.history?.stop();
     });
   }
 
@@ -102,7 +106,10 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
     this.client.on('stateChanged', (url: string, states: OverkizState[]) => this.onStateChanged(url, states));
     this.client.on('reconnect', () => this.log.info('Event-listener hersteld.'));
     this.client.on('error', (err: Error) => this.log.error(`Event-loop fout: ${err.message}`));
-    this.registry.on('contact', (url: string, closed: boolean) => this.dispatcher?.onContact(url, closed));
+    this.registry.on('contact', (url: string, closed: boolean) => {
+      this.history?.add({ kind: 'contact', sensor: url, state: closed ? 'closed' : 'open' });
+      this.dispatcher?.onContact(url, closed);
+    });
 
     this.engine?.start();
     await this.client.startEventLoop();
@@ -144,13 +151,18 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
       groups.set(g.id, valid);
     }
 
-    const interlocks = new Map<string, { contact: string; mode: 'queue' | 'drop' }>();
+    const interlocks = new Map<string, { contact: string; mode: 'queue' | 'drop'; debounceMs: number }>();
     for (const il of auto.interlocks ?? []) {
-      interlocks.set(il.screen, { contact: il.contact, mode: il.onDoorOpen ?? 'queue' });
+      interlocks.set(il.screen, {
+        contact: il.contact,
+        mode: il.onDoorOpen ?? 'queue',
+        debounceMs: (il.closeDebounceSec ?? 10) * 1000,
+      });
     }
 
-    const stateFile = path.join(this.api.user.storagePath(), 'somfy-smart-state.json');
-    this.store = new StateStore(stateFile, this.log);
+    const storage = this.api.user.storagePath();
+    this.store = new StateStore(path.join(storage, 'somfy-smart-state.json'), this.log);
+    this.history = new HistoryLog(path.join(storage, 'somfy-smart-history.json'), this.log);
 
     this.dispatcher = new MoveDispatcher({
       client: this.client!,
@@ -160,6 +172,7 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
       screenUrls,
       groups,
       interlocks,
+      history: this.history,
     });
 
     this.engine = new RuleEngine(
@@ -170,6 +183,7 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
       auto.rules ?? [],
       auto.evaluateIntervalSec ?? 10,
       groups,
+      this.history,
     );
   }
 
@@ -289,6 +303,7 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
     const lux = numberState(states, StateName.LUMINANCE);
     if (lux !== undefined) {
       this.registry.setLux(url, lux);
+      this.recordLux(url, lux);
     }
     const closure = numberState(states, StateName.CLOSURE);
     if (closure !== undefined) {
@@ -298,5 +313,19 @@ export class SomfySmartPlatform implements DynamicPlatformPlugin {
     if (contact !== undefined) {
       this.registry.setContact(url, contact.toLowerCase() === 'closed');
     }
+  }
+
+  /** Leg het lux-verloop vast (gethrottled: bij ≥250 lux verschil of elke ~2 min). */
+  private recordLux(url: string, lux: number): void {
+    if (!this.history) {
+      return;
+    }
+    const now = Date.now();
+    const last = this.lastLuxLogged.get(url);
+    if (last && Math.abs(lux - last.lux) < 250 && now - last.t < 120_000) {
+      return;
+    }
+    this.lastLuxLogged.set(url, { lux, t: now });
+    this.history.add({ kind: 'lux', sensor: url, lux: Math.round(lux) });
   }
 }

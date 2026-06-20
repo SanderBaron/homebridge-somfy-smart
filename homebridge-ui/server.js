@@ -38,6 +38,7 @@ class SomfyUiServer extends HomebridgePluginUiServer {
     this.onRequest('/test-connection', this.testConnection.bind(this));
     this.onRequest('/devices', this.devices.bind(this));
     this.onRequest('/status', this.status.bind(this));
+    this.onRequest('/history', this.history.bind(this));
     this.ready();
   }
 
@@ -111,6 +112,21 @@ class SomfyUiServer extends HomebridgePluginUiServer {
       // val terug op lege status
     }
     return { paused: false, glazenwasserUntil: null, lastActions: {} };
+  }
+
+  // Rollende geschiedenis (lux-verloop, timers, commando's).
+  async history(payload) {
+    const file = path.join(this.homebridgeStoragePath, 'somfy-smart-history.json');
+    const n = (payload && payload.limit) || 400;
+    try {
+      if (fs.existsSync(file)) {
+        const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return { entries: Array.isArray(arr) ? arr.slice(-n) : [] };
+      }
+    } catch (e) {
+      // val terug op leeg
+    }
+    return { entries: [] };
   }
 }
 

@@ -39,7 +39,7 @@ function check(name, cond) {
     client, registry, store, log,
     screenUrls: [S1, S2],
     groups,
-    interlocks: new Map([[S2, { contact: CONTACT, mode: 'queue' }]]),
+    interlocks: new Map([[S2, { contact: CONTACT, mode: 'queue', debounceMs: 30 }]]),
   });
 
   const rule = {
@@ -70,7 +70,7 @@ function check(name, cond) {
   check('blijft onder → geen herhaling (mode ongewijzigd)', calls.length === n2);
   engine.stop();
 
-  console.log('\n— Interlock: omlaag onderdrukt bij open deur —');
+  console.log('\n— Interlock: onderdrukken + anti-blip debounce —');
   // Bedrading zoals het platform die legt: contact-wijziging → dispatcher.
   registry.on('contact', (u, c) => dispatcher.onContact(u, c));
 
@@ -84,9 +84,16 @@ function check(name, cond) {
   await dispatcher.applyTarget('screen', S2, 0, 'manual', 'handmatig omlaag');
   check('omlaag bij open deur → onderdrukt (geen commando)', calls.length === 0);
 
-  registry.setContact(CONTACT, true); // deur weer dicht → wachtrij flushen
-  await sleep(20);
-  check('deur dicht → uitgesteld omlaag wordt alsnog uitgevoerd', calls.length === 1 && calls[0].actions[0].commands[0].name === 'close');
+  // Spurious 2s-blip nabootsen: dicht → meteen weer open vóór de debounce verstrijkt.
+  registry.setContact(CONTACT, true);
+  registry.setContact(CONTACT, false);
+  await sleep(60);
+  check('korte dicht-blip → géén flush (debounce filtert)', calls.length === 0);
+
+  // Echte sustained sluiting → flush na debounce.
+  registry.setContact(CONTACT, true);
+  await sleep(60);
+  check('deur blijft dicht → uitgesteld omlaag wordt uitgevoerd', calls.length === 1 && calls[0].actions[0].commands[0].name === 'close');
 
   console.log('\n— Pauze (glazenwasser) —');
   calls.length = 0;

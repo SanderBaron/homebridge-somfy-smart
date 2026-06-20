@@ -2,6 +2,7 @@ import type { Logging } from 'homebridge';
 
 import type { DeviceRegistry } from '../state/registry';
 import type { StateStore } from '../state/store';
+import type { HistoryLog } from '../state/history';
 import type { MoveDispatcher } from './dispatcher';
 import { RuleConfig, SunCondition, TimeWindow } from './types';
 
@@ -37,7 +38,13 @@ export class RuleEngine {
     private readonly rules: RuleConfig[],
     private readonly intervalSec: number,
     private readonly groups: Map<string, string[]>,
+    private readonly history?: HistoryLog,
   ) {}
+
+  /** Noteer een beslissings-/timer-gebeurtenis in de geschiedenis. */
+  private hist(rule: string, lux: number, event: string): void {
+    this.history?.add({ kind: 'eval', rule, lux: Math.round(lux), event });
+  }
 
   start(): void {
     if (this.rules.length === 0) {
@@ -79,7 +86,7 @@ export class RuleEngine {
     const rt = this.runtime.get(rule.id) ?? { mode: 'idle' as const, lastCommandAt: 0 };
     this.runtime.set(rule.id, rt);
 
-    const sunWants = rule.sun ? this.evaluateSun(rule.sun, rt, now) : undefined;
+    const sunWants = rule.sun ? this.evaluateSun(rule.sun, rt, now, rule.name) : undefined;
     const timeActive = rule.time ? inWindow(now, rule.time) : undefined;
 
     // Tijdvenster-reopen: zodra een actief venster afloopt, scherm eenmalig open.
@@ -87,6 +94,7 @@ export class RuleEngine {
       if (rt.prevTimeActive === true && timeActive === false) {
         const openPos = rule.sun.openPosition ?? 100;
         void this.dispatcher.applyTarget(rule.targetType, rule.targetId, openPos, 'engine', `${rule.name} (einde venster)`);
+        this.history?.add({ kind: 'eval', rule: rule.name, event: `einde tijdvenster → omhoog ${openPos}%` });
         rt.mode = 'up';
         rt.lastCommandAt = now;
       }
@@ -108,6 +116,8 @@ export class RuleEngine {
       : (rule.sun.openPosition ?? 100);
 
     void this.dispatcher.applyTarget(rule.targetType, rule.targetId, position, 'engine', rule.name);
+    const lux = rule.sun ? this.combinedLux(rule.sun) : undefined;
+    this.hist(rule.name, lux ?? 0, `${decision === 'down' ? 'omlaag' : 'omhoog'} bevestigd → ${position}%`);
     rt.mode = decision;
     rt.lastCommandAt = now;
   }
@@ -116,7 +126,7 @@ export class RuleEngine {
    * Zon-conditie met hysterese-deadband en Somfy-stijl asymmetrische vertraging:
    * kort wachten om omlaag te gaan, lang (en adaptief) om omhoog te gaan.
    */
-  private evaluateSun(sun: SunCondition, rt: RuleRuntime, now: number): Decision {
+  private evaluateSun(sun: SunCondition, rt: RuleRuntime, now: number, ruleName: string): Decision {
     const lux = this.combinedLux(sun);
     if (lux === undefined) {
       return undefined; // geen sensordata → niets doen
@@ -128,12 +138,19 @@ export class RuleEngine {
     if (lux >= sun.thresholdHigh) {
       rt.belowSince = undefined;
       rt.sunSince ??= now; // zonperiode begint/loopt door
-      rt.aboveSince ??= now;
+      if (rt.aboveSince === undefined) {
+        rt.aboveSince = now;
+        this.hist(ruleName, lux, `≥ ${sun.thresholdHigh} lux → omlaag-timer gestart (${Math.round(downMs / 1000)}s)`);
+      }
       return now - rt.aboveSince >= downMs ? 'down' : undefined;
     }
     if (lux <= sun.thresholdLow) {
       rt.aboveSince = undefined;
-      rt.belowSince ??= now;
+      if (rt.belowSince === undefined) {
+        rt.belowSince = now;
+        const d = adaptiveUp ? this.adaptiveUpDelay(baseUpMs, rt) : baseUpMs;
+        this.hist(ruleName, lux, `≤ ${sun.thresholdLow} lux → omhoog-timer gestart (${Math.round(d / 1000)}s)`);
+      }
       const upMs = adaptiveUp ? this.adaptiveUpDelay(baseUpMs, rt) : baseUpMs;
       if (now - rt.belowSince >= upMs) {
         rt.sunSince = undefined; // zonperiode afgesloten na omhoog
@@ -142,6 +159,9 @@ export class RuleEngine {
       return undefined;
     }
     // Tussen de drempels: hysterese-deadband — geen bevestiging, zonperiode loopt door.
+    if (rt.belowSince !== undefined || rt.aboveSince !== undefined) {
+      this.hist(ruleName, lux, `deadband (${sun.thresholdLow}-${sun.thresholdHigh}) → lopende timer gereset`);
+    }
     rt.aboveSince = undefined;
     rt.belowSince = undefined;
     return undefined;
